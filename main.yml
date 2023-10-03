@@ -1,0 +1,56 @@
+name: Integration Test
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Create .env file
+      run: |
+        echo "DATABASE_URL=postgres://${{ secrets.PGUSER }}:${{ secrets.PGPASSWORD }}@localhost:5432/${{ secrets.PGDATABASE }}" > .env
+
+    - name: Install PostgreSQL and pg_isready
+      run: |
+        sudo apt-get update
+        sudo apt-get install postgresql postgresql-client -y
+
+    - name: Start PostgreSQL Service
+      run: |
+        sudo service postgresql start
+
+    - name: Create PostgreSQL Database
+      run: |
+        sudo -u postgres psql -c "CREATE DATABASE ${{ secrets.PGDATABASE }};"
+        sudo -u postgres psql -c "CREATE USER ${{ secrets.PGUSER }} WITH PASSWORD '${{ secrets.PGPASSWORD }}';"
+        sudo -u postgres psql -c "ALTER ROLE ${{ secrets.PGUSER }} SET client_encoding TO 'utf8';"
+        sudo -u postgres psql -c "ALTER ROLE ${{ secrets.PGUSER }} SET default_transaction_isolation TO 'read committed';"
+        sudo -u postgres psql -c "ALTER ROLE ${{ secrets.PGUSER }} SET timezone TO 'UTC';"
+        sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${{ secrets.PGDATABASE }} TO ${{ secrets.PGUSER }};"
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '18.x'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Wait for PostgreSQL to start
+      run: |
+        until pg_isready -h localhost -U ${{ secrets.PGUSER }} -d ${{ secrets.PGDATABASE }}; do
+          echo "Waiting for PostgreSQL to start..."
+          sleep 2
+        done
+
+    - name: Run Integration Tests
+      run: npm test
+
